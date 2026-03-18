@@ -77,8 +77,8 @@
 
 ## 技术栈
 - 前端：Vue 3 + TypeScript + Vite
-- 后端：Node.js + Express
-- 数据库：MongoDB
+- 后端：FASTAPI
+- 数据库：MYSQL
 - AI 接口：OpenAI API / 百度文心一言 / 阿里通义千问
 - 实时通信：Socket.io
 - 样式框架：Tailwind CSS
@@ -87,7 +87,7 @@
 ## 安装与运行
 ### 前置要求
 - Node.js >= 18.0.0
-- MongoDB >= 5.0.0
+- MY SQL>= 5.0.0
 - AI API Key（OpenAI / 百度 / 阿里等）
 
 ### 安装步骤
