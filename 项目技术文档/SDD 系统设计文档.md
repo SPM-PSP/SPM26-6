@@ -4,10 +4,10 @@
 
 | 项目名称 | AI 学伴 - 轻量化团队 AI 辅助学习平台 |
 |---------|-------------------------------------|
-| 文档版本 | v1.0 |
+| 文档版本 | v2.0 |
 | 创建日期 | 2026-04-08 |
 | 最后更新 | 2026-04-15 |
-| 文档状态 | 初稿 |
+| 文档状态 | 重构版 |
 | 维护者 | 陈城 |
 | 关联文档 | 需求说明书（SRS）v1.1、规范驱动开发文档（spec.md）v1.0 |
 
@@ -17,7 +17,8 @@
 
 | 版本 | 日期 | 修订人 | 修订内容 | 审核状态 |
 |------|------|--------|----------|----------|
-| v1.0 | 2026-04-08 | 陈城 | 初始版本，完成系统设计 | 待审核 |
+| v1.0 | 2026-04-08 | 陈城 | 初始版本 | 已审核 |
+| v2.0 | 2026-04-15 | 陈城 | 重构架构设计，修正 CSCI/CSC 划分 | 已审核 |
 
 ---
 
@@ -25,7 +26,7 @@
 
 1. [概述](#1-概述)
 2. [架构设计](#2-架构设计)
-3. [功能设计](#3-功能设计)
+3. [CSCI 详细设计](#3-csci-详细设计)
 4. [接口设计](#4-接口设计)
 5. [性能指标设计](#5-性能指标设计)
 6. [硬件设计](#6-硬件设计)
@@ -56,6 +57,7 @@
 | SDD | 系统设计文档（System Design Document） |
 | SRS | 需求规格说明书（Software Requirements Specification） |
 | CSCI | 计算机软件配置项（Computer Software Configuration Item） |
+| CSC | 计算机软件组件（Computer Software Component） |
 | HWCI | 计算机硬件配置项（Computer Hardware Configuration Item） |
 | API | 应用程序接口（Application Programming Interface） |
 | JWT | JSON Web Token |
@@ -80,7 +82,7 @@
 
 #### 2.1.1 架构概述
 
-本系统采用前后端分离的分层架构，整体划分为四层：
+本系统采用前后端分离的分层架构，整体划分为三层：
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -94,21 +96,22 @@
 ┌────────────────────┴────────────────────────────────────┐
 │                    应用层（Application Layer）             │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  │
-│  │  认证服务    │  │  业务服务    │  │   AI 服务     │  │
+│  │  认证模块    │  │  业务模块    │  │   AI 模块     │  │
 │  │  (Auth)      │  │  (Business)  │  │  (AI Service)│  │
 │  └──────────────┘  └──────────────┘  └──────────────┘  │
 │  ┌──────────────┐  ┌──────────────┐                     │
-│  │  文件服务    │  │  通知服务    │                     │
+│  │  文件模块    │  │  通知模块    │                     │
 │  │  (File)      │  │  (Notify)    │                     │
 │  └──────────────┘  └──────────────┘                     │
 └────────────────────┬────────────────────────────────────┘
                      │
-┌────────────────────┴────────────────────────────────────┐
+                     ▼
+┌─────────────────────────────────────────────────────────┐
 │                    数据层（Data Layer）                    │
-│    ┌──────────────┐   │
-│   │   MySQL      │   │
-│   │  (数据库)      │   │
-│    └──────────────┘  │
+│  ┌─────────────────────────────────────────────────┐    │
+│  │              MySQL 8.0+ (单数据库)               │    │
+│  │  - 用户数据、业务数据、日志数据、文件元数据      │    │
+│  └─────────────────────────────────────────────────┘    │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -117,10 +120,11 @@
 | 特点 | 说明 |
 |------|------|
 | **前后端分离** | 前端负责展示和交互，后端负责业务逻辑和数据处理 |
-| **微服务化** | 按业务功能拆分为独立的服务模块 |
+| **轻量化架构** | 单 MySQL 数据库，无缓存层，降低运维复杂度 |
 | **RESTful API** | 统一使用 REST 风格接口进行通信 |
 | **JWT 认证** | 无状态认证，支持水平扩展 |
 | **多 AI 服务商** | 支持多个 AI 服务商，具备降级能力 |
+| **本地文件存储** | 文件直接存储在服务器本地 |
 
 ### 2.2 系统部署架构
 
@@ -130,27 +134,23 @@
 │         PC 浏览器 / 平板浏览器                            │
 └────────────────────┬────────────────────────────────────┘
                      │ Internet
-┌────────────────────┴────────────────────────────────────┐
-│                    接入层（Nginx）                        │
-│  - 负载均衡                                               │
-│  - SSL 终止                                               │
-│  - 静态资源缓存                                           │
-└────────────────────┬────────────────────────────────────┘
                      │
 ┌────────────────────┴────────────────────────────────────┐
-│                  应用服务器集群                           │
-│  ┌──────────────────┐  ┌──────────────────┐            │
-│  │  Docker Container│  │  Docker Container│            │
-│  │  (FastAPI App)   │  │  (FastAPI App)   │            │
-│  │  PM2 进程管理    │  │  PM2 进程管理     │            │
-│  └──────────────────┘  └──────────────────┘            │
+│                  应用服务器                               │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │  Docker Container                                 │  │
+│  │  (FastAPI App + PM2 进程管理)                     │  │
+│  │  - 直接处理 HTTPS 请求                              │  │
+│  │  - 静态资源服务                                    │  │
+│  └──────────────────────────────────────────────────┘  │
 └────────────────────┬────────────────────────────────────┘
                      │
-                     │
-                 ┌────┴─────┐ 
-                 │   MySQL  │
-                 │           │ 
-                  └──────────┘ 
+                     ▼
+┌─────────────────────────────────────────────────────────┐
+│              数据库服务器（MySQL 8.0+）                    │
+│  - 单数据库实例                                          │
+│  - 本地文件存储（/data/files）                           │
+└─────────────────────────────────────────────────────────┘
 ```
 
 ### 2.3 软件配置项（CSCI）划分
@@ -159,12 +159,10 @@
 
 | CSCI 编号 | CSCI 名称 | 说明 | 开发语言 |
 |-----------|-----------|------|----------|
-| CSCI-01 | 前端应用（Web Client） | 学生端、教师端、管理员端 SPA 应用 | TypeScript + Vue 3 |
+| CSCI-01 | 前端应用（Web Client） | 学生端、教师端、管理员端 SPA 应用 | JavaScript (ES6+) + Vue 3 |
 | CSCI-02 | 后端应用（API Server） | RESTful API 服务、业务逻辑处理 | Python 3.10+ |
 | CSCI-03 | AI 服务模块（AI Service） | AI 接口封装、多服务商切换 | Python 3.10+ |
 | CSCI-04 | 数据库（Database） | 数据存储、索引、视图 | MySQL 8.0+ |
-| CSCI-05 | 缓存服务（Cache） | 热点数据缓存、会话管理 | Redis 7.0+ |
-| CSCI-06 | 文件服务（File Service） | 文件上传、下载、存储管理 | Python 3.10+ |
 
 #### 2.3.2 CSCI 关系图
 
@@ -180,12 +178,11 @@
 │  API Server │     │  AI Service │
 └──────┬──────┘     └─────────────┘
        │
-       ├─────────────┬─────────────┐
-       ▼             ▼             ▼
-┌──────────┐  ┌──────────┐  ┌──────────┐
-│ CSCI-04  │  │ CSCI-05  │  │ CSCI-06  │
-│ Database │  │  Cache   │  │   File   │
-└──────────┘  └──────────┘  └──────────┘
+       ▼
+┌──────────┐
+│ CSCI-04  │
+│ Database │
+└──────────┘
 ```
 
 ### 2.4 硬件配置项（HWCI）划分
@@ -194,11 +191,8 @@
 
 | HWCI 编号 | HWCI 名称 | 规格 | 数量 | 用途 |
 |-----------|-----------|------|------|------|
-| HWCI-01 | 应用服务器 | 2 核 4G，50GB SSD | 2 台 | 部署 FastAPI 应用 |
-| HWCI-02 | 数据库服务器 | 4 核 8G，100GB SSD | 1 台 | 部署 MySQL 主库 |
-| HWCI-03 | 缓存服务器 | 1 核 2G | 1 台 | 部署 Redis |
-| HWCI-04 | 文件存储 | 100GB OSS | 1 份 | 存储用户上传文件 |
-| HWCI-05 | 负载均衡器 | 阿里云 SLB | 1 个 | 流量分发 |
+| HWCI-01 | 应用服务器 | 2 核 4G，50GB SSD | 1 台 | 部署 FastAPI 应用 |
+| HWCI-02 | 数据库服务器 | 4 核 8G，100GB SSD | 1 台 | 部署 MySQL、文件存储 |
 
 ### 2.5 技术栈选型
 
@@ -207,12 +201,13 @@
 | 技术 | 版本 | 用途 |
 |------|------|------|
 | Vue 3 | 3.3+ | 前端框架 |
-| TypeScript | 5.0+ | 类型系统 |
+| JavaScript | ES6+ | 开发语言 |
 | Vite | 4.0+ | 构建工具 |
 | Element Plus | 2.3+ | UI 组件库 |
 | Axios | 1.4+ | HTTP 客户端 |
 | Pinia | 2.1+ | 状态管理 |
 | Vue Router | 4.2+ | 路由管理 |
+| MathJax | 3.0+ | LaTeX 公式渲染 |
 
 #### 2.5.2 后端技术栈
 
@@ -224,411 +219,441 @@
 | SQLAlchemy | 2.0+ | ORM 框架 |
 | Pydantic | 2.0+ | 数据验证 |
 | JWT | 1.3+ | 身份认证 |
-| Redis-py | 4.6+ | Redis 客户端 |
+| Passlib | 0.17+ | 密码加密（BCrypt） |
 
 #### 2.5.3 数据库与中间件
 
 | 技术 | 版本 | 用途 |
 |------|------|------|
-| MySQL | 8.0+ | 关系型数据库 |
-| Redis | 7.0+ | 缓存数据库 |
-| Nginx | 1.24+ | 反向代理 |
+| MySQL | 8.0+ | 关系型数据库（唯一数据源） |
 | Docker | 24.0+ | 容器化 |
 
 ---
 
-## 3. 功能设计
+## 3. CSCI 详细设计
 
-### 3.1 功能分解概述
+### 3.1 CSCI-01：前端应用（Web Client）
 
-根据需求规格说明书（SRS），将系统功能按用户角色分解为三个计算机软件项（CSC）：
+#### 3.1.1 CSCI-01 概述
 
-- **CSC-STUDENT**：学生端功能集
-- **CSC-TEACHER**：教师端功能集
-- **CSC-ADMIN**：管理员端功能集
+| 项目 | 说明 |
+|------|------|
+| **名称** | 前端应用（Web Client） |
+| **开发语言** | JavaScript (ES6+) + Vue 3 |
+| **主要职责** | 提供学生端、教师端、管理员端用户界面 |
+| **运行环境** | 浏览器（Chrome 90+、Firefox 88+、Edge 90+） |
 
-### 3.2 学生端功能设计（CSC-STUDENT）
+#### 3.1.2 CSCI-01 的 CSC 划分
 
-#### 3.2.1 CSC-STUDENT 组成
+| CSC 编号 | CSC 名称 | 说明 |
+|---------|---------|------|
+| CSC-01-01 | 学生端前端 | 学生端所有功能的前端实现 |
+| CSC-01-02 | 教师端前端 | 教师端所有功能的前端实现 |
+| CSC-01-03 | 管理员端前端 | 管理员端所有功能的前端实现 |
+| CSC-01-04 | 公共组件库 | 通用组件、工具函数、样式 |
 
-| 模块编号 | 模块名称 | 对应需求 ID |
-|---------|---------|------------|
-| CSC-STUDENT-01 | AI 智能答疑 | REQ-STUDENT-001 |
-| CSC-STUDENT-02 | AI 笔记总结 | REQ-STUDENT-002 |
-| CSC-STUDENT-03 | AI 错题分析 | REQ-STUDENT-003 |
-| CSC-STUDENT-04 | 作业提交与批改 | REQ-STUDENT-004 |
+#### 3.1.3 CSC-01-01：学生端前端
 
-#### 3.2.2 AI 智能答疑模块（CSC-STUDENT-01）
+**功能说明**：
+提供学生端所有功能的前端界面，包括登录注册、AI 答疑、笔记总结、错题分析、作业提交等功能。
 
-**功能描述**：
-提供 AI 智能问答服务，支持多轮对话、学科分类、公式渲染。
+**主要组件**：
+- `LoginRegister.vue`：登录、注册、找回密码页面
+- `StudentHome.vue`：学生端首页、功能导航
+- `QuestionAnswer.vue`：问答输入、答案展示、多轮对话（支持 LaTeX 公式渲染）
+- `NoteSummary.vue`：笔记上传、总结展示、导出功能
+- `ErrorAnalysis.vue`：错题上传、分析结果、错题本管理
+- `Homework.vue`：作业列表、提交、批改结果查看
+- `PersonalCenter.vue`：个人信息、密码修改、登录日志
 
-**处理流程**：
-```
-用户提问 → 前端校验 → API 请求 → 后端鉴权 → AI 服务调用 → 
-答案生成 → 格式化处理 → 返回前端 → 渲染展示
-```
+**API 调用**：
+- `POST /api/v1/auth/login` - 登录
+- `POST /api/v1/student/question` - AI 答疑
+- `POST /api/v1/student/summary` - 笔记总结
+- `POST /api/v1/student/error-analysis` - 错题分析
+- `GET /api/v1/student/homework` - 作业列表
+- `POST /api/v1/student/homework/submit` - 作业提交
 
-**输入**：
-- 问题文本（≤500 字符）
-- 学科分类（可选）
-- 会话 ID（多轮对话时）
+#### 3.1.4 CSC-01-02：教师端前端
 
-**输出**：
-- 答案文本
-- 解题步骤
-- 公式（LaTeX 格式）
-- 相关问题推荐
+**功能说明**：
+提供教师端所有功能的前端界面，包括 AI 出题、教案管理、试题管理、学生管理、作业批改等功能。
 
-**数据结构**：
+**主要组件**：
+- `TeacherLogin.vue`：登录、注册页面
+- `TeacherHome.vue`：教师端首页、数据概览
+- `QuestionGenerate.vue`：出题参数配置、试题预览编辑
+- `LessonPlan.vue`：教案列表、富文本编辑器、模板管理
+- `QuestionBank.vue`：题库管理、组卷功能
+- `StudentManage.vue`：学生列表、学习跟踪、一对一指导
+- `HomeworkGrade.vue`：作业列表、批改界面、统计分析
+- `TeacherCenter.vue`：个人信息、密码修改
+
+**API 调用**：
+- `POST /api/v1/teacher/question/generate` - AI 出题
+- `GET /api/v1/teacher/lesson-plans` - 教案列表
+- `POST /api/v1/teacher/lesson-plans` - 创建教案
+- `GET /api/v1/teacher/questions` - 题库列表
+- `GET /api/v1/teacher/students` - 学生列表
+- `GET /api/v1/teacher/homework` - 作业列表
+- `POST /api/v1/teacher/homework/grade` - 作业批改 |
+
+#### 3.1.5 CSC-01-03：管理员端前端
+
+**功能说明**：
+提供管理员端所有功能的前端界面，包括用户管理、系统配置、数据统计、日志监控等功能。
+
+**主要组件**：
+- `AdminLogin.vue`：管理员登录
+- `AdminHome.vue`：管理员端首页、数据概览
+- `UserManage.vue`：用户列表、审核、角色分配
+- `SystemConfig.vue`：AI 配置、系统参数、公告管理
+- `DataStatistics.vue`：使用统计、AI 调用统计、教学效果分析
+- `LogMonitor.vue`：操作日志、错误日志查看
+- `AdminCenter.vue`：个人信息、密码修改
+
+**API 调用**：
+- `GET /api/v1/admin/users` - 用户列表
+- `POST /api/v1/admin/users/audit` - 用户审核
+- `GET /api/v1/admin/configs` - 系统配置
+- `GET /api/v1/admin/statistics` - 数据统计
+- `GET /api/v1/admin/logs` - 日志查询 |
+
+#### 3.1.6 CSC-01-04：公共组件库
+
+**功能说明**：
+提供通用组件、工具函数、样式文件等，供学生端、教师端、管理员端共用。
+
+**主要内容**：
+- **基础组件**：按钮、表单、弹窗、表格、下拉框等 Element Plus 封装
+- **布局组件**：导航栏、侧边栏、页脚、面包屑等
+- **工具函数**：日期格式化、数据验证、API 请求封装、错误处理
+- **样式文件**：全局样式、主题变量、响应式断点
+- **路由配置**：路由定义、权限控制、路由守卫
+- **状态管理**：Pinia store 定义（用户状态、系统配置等） |
+
+### 3.2 CSCI-02：后端应用（API Server）
+
+#### 3.2.1 CSCI-02 概述
+
+| 项目 | 说明 |
+|------|------|
+| **名称** | 后端应用（API Server） |
+| **开发语言** | Python 3.10+ |
+| **主要职责** | 提供 RESTful API、业务逻辑处理、数据持久化 |
+| **运行环境** | Docker 容器（FastAPI + Uvicorn + PM2） |
+
+#### 3.2.2 CSCI-02 的 CSC 划分
+
+| CSC 编号 | CSC 名称 | 说明 |
+|---------|---------|------|
+| CSC-02-01 | 认证模块 | 用户注册、登录、权限控制 |
+| CSC-02-02 | 学生业务模块 | 学生端所有功能的后端实现 |
+| CSC-02-03 | 教师业务模块 | 教师端所有功能的后端实现 |
+| CSC-02-04 | 管理员业务模块 | 管理员端所有功能的后端实现 |
+| CSC-02-05 | 文件模块 | 文件上传、下载、存储管理 |
+| CSC-02-06 | 通知模块 | 消息推送、系统通知 |
+| CSC-02-07 | 日志模块 | 操作日志、错误日志记录 |
+
+#### 3.2.3 CSC-02-01：认证模块
+
+**功能说明**：
+负责用户认证和权限管理，包括注册、登录、JWT 生成、权限控制等功能。
+
+**主要接口**：
+- `POST /api/v1/auth/register` - 用户注册
+- `POST /api/v1/auth/login` - 用户登录（返回 JWT Token）
+- `POST /api/v1/auth/logout` - 用户登出
+- `POST /api/v1/auth/refresh` - 刷新 Token
+- `POST /api/v1/auth/password/reset` - 密码重置
+- `GET /api/v1/auth/profile` - 获取当前用户信息
+- `PUT /api/v1/auth/profile` - 更新用户信息
+
+**业务逻辑**：
+1. 用户注册：验证账号可用性 → 发送验证码 → 创建用户（密码 BCrypt 加密）→ 待审核状态
+2. 用户登录：验证账号密码 → 检查账号状态 → 生成 JWT Token → 记录登录日志
+3. 权限控制：JWT 中间件验证 Token → RBAC 权限检查 → 接口级鉴权
+
+#### 3.2.4 CSC-02-02：学生业务模块
+
+**功能说明**：
+实现学生端所有业务功能，包括 AI 答疑、笔记总结、错题分析、作业提交等。
+
+**主要接口**：
+- `POST /api/v1/student/question` - AI 智能答疑
+- `POST /api/v1/student/summary` - AI 笔记总结
+- `POST /api/v1/student/error-analysis` - AI 错题分析
+- `GET /api/v1/student/errors` - 错题本列表
+- `POST /api/v1/student/errors` - 添加错题
+- `DELETE /api/v1/student/errors/{id}` - 删除错题
+- `GET /api/v1/student/homework` - 作业列表
+- `POST /api/v1/student/homework/submit` - 提交作业
+- `GET /api/v1/student/homework/{id}/grade` - 查看批改结果
+- `POST /api/v1/student/answer/{id}/favorite` - 收藏答案
+- `POST /api/v1/student/answer/{id}/report` - 举报答案 |
+
+#### 3.2.5 CSC-02-03：教师业务模块
+
+**功能说明**：
+实现教师端所有业务功能，包括 AI 出题、教案管理、试题管理、学生管理、作业批改等。
+
+**主要接口**：
+- `POST /api/v1/teacher/question/generate` - AI 智能出题
+- `GET /api/v1/teacher/lesson-plans` - 教案列表
+- `POST /api/v1/teacher/lesson-plans` - 创建教案
+- `PUT /api/v1/teacher/lesson-plans/{id}` - 更新教案
+- `DELETE /api/v1/teacher/lesson-plans/{id}` - 删除教案
+- `GET /api/v1/teacher/questions` - 题库列表
+- `POST /api/v1/teacher/questions` - 创建试题
+- `POST /api/v1/teacher/questions/batch` - 批量导入试题
+- `GET /api/v1/teacher/students` - 学生列表
+- `GET /api/v1/teacher/students/{id}/report` - 学生学习报告
+- `GET /api/v1/teacher/homework` - 作业列表
+- `POST /api/v1/teacher/homework` - 发布作业
+- `POST /api/v1/teacher/homework/grade` - 作业批改
+- `GET /api/v1/teacher/homework/{id}/statistics` - 作业统计分析 |
+
+#### 3.2.6 CSC-02-04：管理员业务模块
+
+**功能说明**：
+实现管理员端所有业务功能，包括用户管理、系统配置、数据统计、日志查询等。
+
+**主要接口**：
+- `GET /api/v1/admin/users` - 用户列表
+- `POST /api/v1/admin/users/audit` - 用户审核
+- `PUT /api/v1/admin/users/{id}/role` - 分配角色
+- `PUT /api/v1/admin/users/{id}/status` - 禁用/启用账号
+- `GET /api/v1/admin/configs` - 系统配置
+- `PUT /api/v1/admin/configs` - 更新系统配置
+- `GET /api/v1/admin/statistics/usage` - 使用统计
+- `GET /api/v1/admin/statistics/ai` - AI 调用统计
+- `GET /api/v1/admin/statistics/teaching` - 教学效果分析
+- `GET /api/v1/admin/logs/operation` - 操作日志
+- `GET /api/v1/admin/logs/error` - 错误日志
+- `GET /api/v1/admin/announcements` - 公告列表
+- `POST /api/v1/admin/announcements` - 发布公告 |
+
+#### 3.2.7 CSC-02-05：文件模块
+
+**功能说明**：
+负责文件上传、下载、存储管理，文件元数据存储在 MySQL 数据库中。
+
+**主要接口**：
+- `POST /api/v1/files/upload` - 文件上传
+- `GET /api/v1/files/{id}` - 文件下载
+- `DELETE /api/v1/files/{id}` - 文件删除
+- `GET /api/v1/files` - 文件列表
+
+**文件存储方案**：
+- 存储路径：`/data/files/{user_id}/{file_id}`
+- 文件命名：UUID
+- 数据库表：`files`（file_id, user_id, file_name, file_path, file_size, file_type, create_time）
+- 文件大小限制：10MB
+- 支持格式：.doc, .docx, .pdf, .jpg, .jpeg, .png, .txt
+
+#### 3.2.8 CSC-02-06：通知模块
+
+**功能说明**：
+负责系统消息推送，包括作业批改通知、试题发布通知等。
+
+**主要接口**：
+- `GET /api/v1/notifications` - 消息列表
+- `GET /api/v1/notifications/unread-count` - 未读消息数
+- `PUT /api/v1/notifications/{id}/read` - 标记已读
+- `DELETE /api/v1/notifications/{id}` - 删除消息
+
+**消息类型**：
+- 作业批改完成通知
+- 试题发布通知
+- 系统公告通知
+- 账号审核结果通知 |
+
+#### 3.2.9 CSC-02-07：日志模块
+
+**功能说明**：
+记录系统日志，包括操作日志、错误日志、AI 调用日志等。
+
+**主要接口**：
+- `POST /api/v1/logs/operation` - 记录操作日志（内部调用）
+- `POST /api/v1/logs/error` - 记录错误日志（内部调用）
+- `POST /api/v1/logs/ai` - 记录 AI 调用日志（内部调用）
+- `GET /api/v1/admin/logs/operation` - 查询操作日志
+- `GET /api/v1/admin/logs/error` - 查询错误日志
+- `GET /api/v1/admin/logs/ai` - 查询 AI 调用日志
+
+**日志内容**：
+- 操作日志：用户 ID、操作类型、操作时间、IP 地址
+- 错误日志：错误信息、堆栈跟踪、发生时间
+- AI 调用日志：用户 ID、服务商、提示词、响应、Token 消耗、耗时 |
+
+### 3.3 CSCI-03：AI 服务模块（AI Service）
+
+#### 3.3.1 CSCI-03 概述
+
+| 项目 | 说明 |
+|------|------|
+| **名称** | AI 服务模块（AI Service） |
+| **开发语言** | Python 3.10+ |
+| **主要职责** | 封装 AI 接口调用、多服务商切换、降级策略 |
+| **运行环境** | Docker 容器（与 CSCI-02 同容器或独立容器） |
+
+#### 3.3.2 CSCI-03 的 CSC 划分
+
+| CSC 编号 | CSC 名称 | 说明 |
+|---------|---------|------|
+| CSC-03-01 | AI 接口封装 | 统一封装各 AI 服务商接口 |
+| CSC-03-02 | 服务商管理 | AI 服务商配置、切换 |
+| CSC-03-03 | 降级策略 | 调用失败时的降级处理 |
+| CSC-03-04 | 提示词管理 | 各场景提示词模板管理 |
+
+#### 3.3.3 CSC-03-01：AI 接口封装
+
+**功能说明**：
+统一封装各 AI 服务商接口，提供统一的调用方法，支持多服务商切换。
+
+**统一调用接口**：
 ```python
-class QuestionRequest(BaseModel):
-    question: str = Field(..., max_length=500)
-    subject: Optional[str] = None
-    sessionId: Optional[str] = None
+class AIService:
+    def __init__(self):
+        self.providers = {
+            "openai": OpenAIProvider(),
+            "wenxin": WenxinProvider(),
+            "qwen": QwenProvider()
+        }
     
-class QuestionResponse(BaseModel):
-    answerId: str
-    answer: str
-    sessionId: str
-    steps: Optional[List[str]]
-    formulas: Optional[List[str]]
-    relatedQuestions: Optional[List[str]]
-```
-
-**界面设计**：
-- 问答输入框（支持富文本）
-- 学科选择下拉框
-- 答案展示区（支持 LaTeX 渲染）
-- 收藏/举报/评价按钮
-
-#### 3.2.3 AI 笔记总结模块（CSC-STUDENT-02）
-
-**功能描述**：
-支持文本或文件上传，AI 自动提取知识点、重点、难点。
-
-**处理流程**：
-```
-用户上传笔记 → 文件解析/文本提取 → AI 分析 → 
-知识点提取 → 格式化输出 → 前端展示
-```
-
-**输入**：
-- 文本内容或文件列表（Word/PDF/图片）
-- 总结类型（精简版/详细版/考点版）
-
-**输出**：
-- 总结文本
-- 知识点列表
-- 重点难点列表
-- 考点列表（考点版）
-
-**数据结构**：
-```python
-class SummaryRequest(BaseModel):
-    content: Optional[str] = None
-    files: Optional[List[FileInfo]] = None
-    summaryType: str = "detailed"
+    async def chat(self, prompt: str, provider: str = "wenxin", **kwargs) -> dict:
+        """
+        统一 AI 调用接口
+        :param prompt: 提示词
+        :param provider: AI 服务商
+        :param kwargs: 其他参数（temperature、max_tokens 等）
+        :return: AI 响应
+        """
+        try:
+            return await self.providers[provider].chat(prompt, **kwargs)
+        except Exception as e:
+            # 触发降级策略
+            return await self.fallback_chat(prompt, provider)
     
-class SummaryResponse(BaseModel):
-    summaryId: str
-    summary: str
-    keyPoints: List[KeyPoint]
-    difficulties: List[str]
-    examPoints: Optional[List[str]]
+    async def fallback_chat(self, prompt: str, failed_provider: str) -> dict:
+        """降级策略：自动切换备用服务商"""
+        fallback_order = ["wenxin", "qwen", "openai"]
+        for provider in fallback_order:
+            if provider != failed_provider:
+                try:
+                    return await self.providers[provider].chat(prompt)
+                except Exception:
+                    continue
+        raise Exception("所有 AI 服务均不可用")
 ```
 
-**界面设计**：
-- 文本输入区/文件上传区
-- 总结类型选择
-- 总结结果展示（可编辑）
-- 导出按钮（Word/PDF）
+**支持的服务商**：
+- OpenAI（GPT 模型）
+- 百度文心一言（ERNIE-Bot 模型）
+- 阿里通义千问（Qwen 模型）
 
-#### 3.2.4 AI 错题分析模块（CSC-STUDENT-03）
+#### 3.3.4 CSC-03-02：服务商管理
 
-**功能描述**：
-支持图片上传或文字输入，AI 分析错误原因并推荐练习题。
+**功能说明**：
+管理 AI 服务商配置，包括 API Key 存储、服务商优先级配置、健康检查等。
 
-**处理流程**：
-```
-用户上传错题 → OCR 识别（图片）→ AI 分析 → 
-错误类型判断 → 正确解法生成 → 推荐练习题 → 返回结果
-```
+**主要功能**：
+- API Key 加密存储（数据库表：`system_configs`）
+- 服务商优先级配置
+- 调用参数配置（temperature、max_tokens 等）
+- 定期健康检查 |
 
-**输入**：
-- 错题文本或图片
-- 错误标注（可选）
-- 学科分类
+#### 3.3.5 CSC-03-03：降级策略
 
-**输出**：
-- 错误类型
-- 错误原因分析
-- 正确解题步骤
-- 推荐练习题（3-5 道）
+**功能说明**：
+处理 AI 服务调用失败时的降级处理，保证服务可用性。
 
-**数据结构**：
+**降级策略**：
+- **重试机制**：调用失败自动重试（最多 3 次）
+- **服务商切换**：自动切换备用服务商（ wenxin → qwen → openai）
+- **错误处理**：错误捕获、用户友好提示
+- **熔断机制**：某服务商连续失败 5 次后，暂时屏蔽 10 分钟 |
+
+#### 3.3.6 CSC-03-04：提示词管理
+
+**功能说明**：
+管理各场景的 AI 提示词模板，支持动态渲染和版本管理。
+
+**提示词模板示例**：
 ```python
-class ErrorAnalysisRequest(BaseModel):
-    content: Optional[str] = None
-    imageFile: Optional[FileInfo] = None
-    errorMark: Optional[ErrorMark] = None
-    subject: str
-    
-class ErrorAnalysisResponse(BaseModel):
-    analysisId: str
-    errorType: str
-    errorReason: str
-    correctSolution: Solution
-    knowledgePoints: List[str]
-    recommendQuestions: List[Question]
+PROMPT_TEMPLATES = {
+    "question_answer": "你是一位高校教师，请回答学生的问题。学科：{subject}。问题：{question}",
+    "summary": "请总结以下笔记内容，提取知识点、重点、难点。总结类型：{summary_type}。笔记内容：{content}",
+    "error_analysis": "请分析学生的错题，指出错误原因并给出正确解法。学科：{subject}。错题：{content}",
+    "question_generation": "请生成{count}道{difficulty}难度的{question_type}，知识点：{knowledge_points}"
+}
 ```
 
-**界面设计**：
-- 错题上传区（支持拍照）
-- 错误标注工具
-- 分析结果展示
-- 推荐练习题列表
+**主要功能**：
+- 提示词模板 CRUD
+- 模板版本管理
+- 动态渲染提示词（替换变量）
+- 模板效果评估
 
-#### 3.2.5 作业提交与批改模块（CSC-STUDENT-04）
+### 3.4 CSCI-04：数据库（Database）
 
-**功能描述**：
-支持作业查看、提交、批改结果查看。
+#### 3.4.1 CSCI-04 概述
 
-**处理流程**：
-```
-查看作业列表 → 选择作业 → 提交答案 → 
-AI 批改 → 教师复核（可选）→ 返回批改结果
-```
+| 项目 | 说明 |
+|------|------|
+| **名称** | 数据库（Database） |
+| **数据库类型** | MySQL 8.0+ |
+| **主要职责** | 存储所有业务数据、日志数据、文件元数据 |
+| **部署方式** | 单数据库实例 |
 
-**输入**：
-- 作业 ID
-- 答案文本或文件
+#### 3.4.2 数据库表设计
 
-**输出**：
-- 作业列表
-- 批改结果（得分、错误分析、建议）
+**核心表列表**：
 
-**数据结构**：
+| 表名 | 说明 | 主要字段 |
+|------|------|---------|
+| `users` | 用户表 | id, account, password, name, role, status, school, avatar, created_at |
+| `homeworks` | 作业表 | id, teacher_id, title, content, deadline, created_at |
+| `homework_submissions` | 作业提交表 | id, homework_id, student_id, content, submit_time, score |
+| `questions` | 试题表 | id, teacher_id, content, type, difficulty, answer, analysis |
+| `lesson_plans` | 教案表 | id, teacher_id, title, course, content, created_at |
+| `ai_logs` | AI 调用日志表 | id, user_id, provider, prompt, response, tokens, cost, created_at |
+| `files` | 文件表 | id, user_id, file_name, file_path, file_size, file_type, created_at |
+| `messages` | 消息表 | id, user_id, title, content, is_read, created_at |
+| `operation_logs` | 操作日志表 | id, user_id, operation, ip, created_at |
+| `error_logs` | 错误日志表 | id, error_message, stack_trace, created_at |
+| `system_configs` | 系统配置表 | id, config_key, config_value, description |
+
+#### 3.4.3 索引设计
+
+| 表名 | 索引字段 | 索引类型 |
+|------|---------|---------|
+| `users` | account | 唯一索引 |
+| `users` | role, status | 普通索引 |
+| `homeworks` | teacher_id | 普通索引 |
+| `homework_submissions` | homework_id, student_id | 普通索引 |
+| `questions` | teacher_id, type, difficulty | 普通索引 |
+| `ai_logs` | user_id, created_at | 普通索引 |
+| `files` | user_id | 普通索引 |
+| `messages` | user_id, is_read | 普通索引 |
+| `operation_logs` | user_id, created_at | 普通索引 |
+
+#### 3.4.4 数据库连接配置
+
 ```python
-class HomeworkSubmitRequest(BaseModel):
-    homeworkId: str
-    content: Optional[str] = None
-    files: Optional[List[FileInfo]] = None
-    
-class HomeworkGradeResponse(BaseModel):
-    homeworkId: str
-    totalScore: float
-    questions: List[QuestionGrade]
-    overallComment: str
+DATABASE_CONFIG = {
+    "host": "localhost",
+    "port": 3306,
+    "database": "ai_companion",
+    "user": "ai_user",
+    "password": "${DB_PASSWORD}",  # 环境变量
+    "charset": "utf8mb4",
+    "pool_size": 20,  # 连接池大小
+    "max_overflow": 10,  # 最大溢出连接数
+    "pool_timeout": 30,  # 连接超时时间
+    "pool_recycle": 3600,  # 连接回收时间
+}
 ```
-
-**界面设计**：
-- 作业列表页（按截止时间排序）
-- 作业详情页
-- 提交页面
-- 批改结果页
-
-### 3.3 教师端功能设计（CSC-TEACHER）
-
-#### 3.3.1 CSC-TEACHER 组成
-
-| 模块编号 | 模块名称 | 对应需求 ID |
-|---------|---------|------------|
-| CSC-TEACHER-01 | AI 智能出题 | REQ-TEACHER-001 |
-| CSC-TEACHER-02 | 教案管理 | REQ-TEACHER-002 |
-| CSC-TEACHER-03 | 试题管理 | REQ-TEACHER-003 |
-| CSC-TEACHER-04 | 学生管理 | REQ-TEACHER-004 |
-| CSC-TEACHER-05 | 作业批改 | REQ-TEACHER-005 |
-
-#### 3.3.2 AI 智能出题模块（CSC-TEACHER-01）
-
-**功能描述**：
-根据知识点、题型、难度，AI 自动生成试题。
-
-**处理流程**：
-```
-选择知识点/题型/难度 → AI 生成试题 → 质量评估 → 
-预览编辑 → 保存到题库
-```
-
-**输入**：
-- 知识点列表
-- 题型（选择/填空/简答/编程）
-- 难度（易/中/难）
-- 题目数量（1-20）
-
-**输出**：
-- 试题列表（含答案、解析）
-- 试题质量评分
-
-**数据结构**：
-```python
-class QuestionGenerateRequest(BaseModel):
-    subject: str
-    knowledgePoints: List[str]
-    questionType: str
-    difficulty: str
-    count: int = Field(..., ge=1, le=20)
-    
-class QuestionGenerateResponse(BaseModel):
-    questions: List[Question]
-    aiProvider: str
-```
-
-**界面设计**：
-- 出题参数配置区
-- 试题预览区（支持编辑）
-- 批量保存按钮
-
-#### 3.3.3 教案管理模块（CSC-TEACHER-02）
-
-**功能描述**：
-支持教案创建、编辑、AI 辅助生成、分享。
-
-**处理流程**：
-```
-选择创建方式（空白/模板/AI 辅助）→ 
-编辑教案内容 → 保存 → 分类管理 → 分享（可选）
-```
-
-**输入**：
-- 教案标题、课程
-- 模板类型（可选）
-- AI 辅助参数（可选）
-
-**输出**：
-- 教案内容（教学目标、流程、习题）
-
-**数据结构**：
-```python
-class LessonPlan(BaseModel):
-    lessonPlanId: str
-    title: str
-    course: str
-    content: LessonPlanContent
-    createTime: datetime
-    
-class LessonPlanContent(BaseModel):
-    teachingGoals: List[str]
-    keyPoints: List[str]
-    difficulties: List[str]
-    teachingProcess: List[TeachingStage]
-```
-
-**界面设计**：
-- 教案列表页
-- 富文本编辑器
-- 模板选择弹窗
-- 分享功能
-
-### 3.4 管理员端功能设计（CSC-ADMIN）
-
-#### 3.4.1 CSC-ADMIN 组成
-
-| 模块编号 | 模块名称 | 对应需求 ID |
-|---------|---------|------------|
-| CSC-ADMIN-01 | 用户管理 | REQ-ADMIN-001 |
-| CSC-ADMIN-02 | 系统配置 | REQ-ADMIN-002 |
-| CSC-ADMIN-03 | 数据统计 | REQ-ADMIN-003 |
-| CSC-ADMIN-04 | 日志监控 | REQ-ADMIN-004 |
-
-#### 3.4.2 用户管理模块（CSC-ADMIN-01）
-
-**功能描述**：
-管理用户账号、审核注册申请、分配角色。
-
-**处理流程**：
-```
-查看用户列表 → 审核申请 → 分配角色 → 
-禁用/启用账号 → 重置密码
-```
-
-**输入**：
-- 用户筛选条件
-- 审核结果（通过/驳回）
-- 角色分配
-
-**输出**：
-- 用户列表
-- 审核结果
-
-**数据结构**：
-```python
-class UserAuditRequest(BaseModel):
-    userId: int
-    auditResult: str  # approved/rejected
-    rejectReason: Optional[str] = None
-```
-
-**界面设计**：
-- 用户列表页（支持筛选）
-- 审核弹窗
-- 角色分配弹窗
-
-#### 3.4.3 系统配置模块（CSC-ADMIN-02）
-
-**功能描述**：
-配置 AI 接口、系统参数、公告管理。
-
-**处理流程**：
-```
-选择配置项 → 修改参数 → 验证 → 保存 → 生效
-```
-
-**输入**：
-- AI API Key
-- 系统参数（文件限制、频率限制等）
-
-**输出**：
-- 配置结果
-
-**数据结构**：
-```python
-class SystemConfig(BaseModel):
-    aiProviders: Dict[str, AIProviderConfig]
-    fileUploadLimit: int  # MB
-    apiRateLimit: int  # 次/分钟
-```
-
-**界面设计**：
-- 配置表单
-- AI 服务商管理
-- 参数设置
-
-#### 3.4.4 数据统计模块（CSC-ADMIN-03）
-
-**功能描述**：
-统计平台使用情况、AI 调用量、教学效果。
-
-**处理流程**：
-```
-选择统计维度 → 查询数据 → 生成图表 → 导出报表
-```
-
-**输入**：
-- 时间范围
-- 统计维度
-
-**输出**：
-- 统计数据
-- 可视化图表
-
-**数据结构**：
-```python
-class StatisticsRequest(BaseModel):
-    startTime: datetime
-    endTime: datetime
-    dimension: str  # user/ai/homework
-    
-class StatisticsResponse(BaseModel):
-    data: Dict[str, Any]
-    charts: List[ChartConfig]
-```
-
-**界面设计**：
-- 数据筛选区
-- 图表展示区（折线图、柱状图）
-- 导出按钮
 
 ---
 
@@ -643,32 +668,6 @@ class StatisticsResponse(BaseModel):
 | OpenAI API | OpenAI | HTTPS | 调用 GPT 模型 |
 | 文心一言 API | 百度 | HTTPS | 调用 ERNIE-Bot 模型 |
 | 通义千问 API | 阿里 | HTTPS | 调用 Qwen 模型 |
-
-**接口封装**：
-```python
-class AIService:
-    def __init__(self):
-        self.providers = {
-            "openai": OpenAIProvider(),
-            "wenxin": WenxinProvider(),
-            "qwen": QwenProvider()
-        }
-    
-    async def chat(self, prompt: str, provider: str = "wenxin") -> str:
-        # 降级策略
-        try:
-            return await self.providers[provider].chat(prompt)
-        except Exception:
-            # 自动切换备用服务商
-            return await self.fallback_chat(prompt)
-```
-
-#### 4.1.2 数据库接口
-
-| 接口类型 | 说明 | 连接池配置 |
-|---------|------|-----------|
-| MySQL 连接 | 主从复制，读写分离 | 最大连接数 50，最小空闲数 10 |
-| Redis 连接 | 哨兵模式，高可用 | 最大连接数 20 |
 
 ### 4.2 内部接口设计
 
@@ -688,22 +687,6 @@ class AIService:
 }
 ```
 
-**错误码规范**：
-| 错误码范围 | 说明 |
-|-----------|------|
-| 1000-1999 | 认证相关错误 |
-| 2000-2999 | 参数验证错误 |
-| 3000-3999 | 业务逻辑错误 |
-| 5000-5999 | 系统错误 |
-
-#### 4.2.2 模块间接口
-
-| 调用方 | 被调用方 | 接口类型 | 说明 |
-|-------|---------|---------|------|
-| 控制器层 | 服务层 | 方法调用 | 业务逻辑处理 |
-| 服务层 | 数据访问层 | 方法调用 | 数据库操作 |
-| 服务层 | AI 服务层 | 方法调用 | AI 接口调用 |
-
 ### 4.3 用户界面设计
 
 #### 4.3.1 界面规范
@@ -714,23 +697,6 @@ class AIService:
 | 字体规范 | 主字体 14px，标题 16-20px，辅助文字 12px |
 | 间距规范 | 基础间距 8px，组件间距 16px |
 | 响应式规范 | 支持 PC（≥1200px）、平板（768-1199px） |
-
-#### 4.3.2 关键界面
-
-**学生端首页**：
-- 顶部导航栏（Logo、用户信息、消息）
-- 功能入口（答疑、笔记总结、错题分析、作业）
-- 最近使用/推荐内容
-
-**教师端首页**：
-- 顶部导航栏
-- 功能入口（出题、教案、试题、学生管理）
-- 教学数据概览
-
-**管理员端首页**：
-- 顶部导航栏
-- 功能入口（用户管理、系统配置、数据统计）
-- 平台数据概览
 
 ---
 
@@ -761,7 +727,6 @@ class AIService:
 | 系统可用性 | ≥99.5% |
 | AI 接口调用成功率 | ≥98% |
 | 数据库无故障时间 | ≥30 天 |
-| 平均无故障时间（MTBF） | ≥720 小时 |
 
 ### 5.4 资源占用指标
 
@@ -770,16 +735,6 @@ class AIService:
 | CPU 使用率（峰值） | ≤70% |
 | 内存占用（峰值） | ≤80% |
 | 磁盘使用率 | ≤85% |
-| 带宽占用（峰值） | ≤80% |
-
-### 5.5 性能优化措施
-
-| 优化项 | 措施 |
-|-------|------|
-| 数据库优化 | 索引优化、查询优化、读写分离 |
-| 缓存优化 | Redis 缓存热点数据、页面缓存 |
-| 前端优化 | 代码分割、懒加载、图片压缩 |
-| AI 调用优化 | 请求合并、结果缓存、降级策略 |
 
 ---
 
@@ -808,52 +763,34 @@ class AIService:
 | 操作系统 | Ubuntu 22.04 LTS |
 | 数据库 | MySQL 8.0+ |
 
-#### 6.1.3 缓存服务器
-
-| 配置项 | 规格 |
-|-------|------|
-| CPU | 1 核 |
-| 内存 | 2GB |
-| 操作系统 | Ubuntu 22.04 LTS |
-| 缓存 | Redis 7.0+ |
-
 ### 6.2 网络设计
 
-#### 6.2.1 网络拓扑
-
-```
-Internet → 负载均衡器（SLB） → 应用服务器集群
-                                    ↓
-                            数据库/缓存/存储
-```
-
-#### 6.2.2 网络安全
+#### 6.2.1 网络安全
 
 | 安全措施 | 说明 |
 |---------|------|
-| 防火墙 | 仅开放 80/443 端口 |
-| SSL 证书 | HTTPS 加密传输 |
-| DDoS 防护 | 阿里云基础防护 |
+| 防火墙 | 仅开放 443 端口（HTTPS） |
+| SSL 证书 | HTTPS 加密传输（FastAPI 内置支持） |
 | 内网隔离 | 数据库不对外暴露 |
 
 ### 6.3 存储设计
 
 #### 6.3.1 数据库存储
 
-| 数据类型 | 存储位置 | 预估容量 |
-|---------|---------|---------|
-| 用户数据 | MySQL | 1GB |
-| 作业数据 | MySQL | 5GB |
-| AI 调用日志 | MySQL | 10GB |
-| 系统日志 | MySQL | 5GB |
+| 数据类型 | 预估容量 |
+|---------|---------|
+| 用户数据 | 1GB |
+| 作业数据 | 5GB |
+| AI 调用日志 | 10GB |
+| 系统日志 | 5GB |
 
 #### 6.3.2 文件存储
 
 | 文件类型 | 存储方式 | 预估容量 |
 |---------|---------|---------|
-| 用户上传文件 | 本地/OSS | 50GB |
-| 静态资源 | 本地/CDN | 10GB |
-| 备份文件 | OSS | 30GB |
+| 用户上传文件 | 本地存储（/data/files） | 50GB |
+| 静态资源 | 本地存储 | 10GB |
+| 备份文件 | 本地+ 定期导出 | 30GB |
 
 ---
 
@@ -861,15 +798,7 @@ Internet → 负载均衡器（SLB） → 应用服务器集群
 
 ### 7.1 可靠性设计
 
-#### 7.1.1 冗余设计
-
-| 组件 | 冗余方案 |
-|------|---------|
-| 应用服务器 | 双机热备，负载均衡 |
-| 数据库 | 主从复制，自动故障转移 |
-| Redis | 哨兵模式，高可用 |
-
-#### 7.1.2 容错设计
+#### 7.1.1 容错设计
 
 | 容错项 | 措施 |
 |-------|------|
@@ -877,58 +806,33 @@ Internet → 负载均衡器（SLB） → 应用服务器集群
 | 数据库连接失败 | 连接池重试机制 |
 | 文件上传失败 | 断点续传、重试机制 |
 
-#### 7.1.3 备份设计
+#### 7.1.2 备份设计
 
 | 备份类型 | 频率 | 保留时间 | 存储位置 |
 |---------|------|---------|---------|
-| 数据库备份 | 每日凌晨 | 30 天 | OSS |
-| 文件备份 | 每周 | 90 天 | OSS |
-| 日志备份 | 每日 | 180 天 | 本地+OSS |
+| 数据库备份 | 每日凌晨 | 30 天 | 本地+ 定期导出 |
+| 文件备份 | 每周 | 90 天 | 本地 |
+| 日志备份 | 每日 | 180 天 | 本地 |
 
 ### 7.2 可维护性设计
 
 #### 7.2.1 日志设计
 
-| 日志级别 | 说明 | 输出内容 |
-|---------|------|---------|
-| DEBUG | 调试信息 | 详细请求参数、处理过程 |
-| INFO | 普通信息 | 请求摘要、操作结果 |
-| WARN | 警告信息 | 异常情况、性能问题 |
-| ERROR | 错误信息 | 错误堆栈、请求上下文 |
-
-**日志规范**：
-```python
-import logging
-
-logger = logging.getLogger(__name__)
-
-# 结构化日志
-logger.info({
-    "event": "user_login",
-    "userId": 1001,
-    "ip": "192.168.1.1",
-    "timestamp": "2026-04-08T10:00:00Z"
-})
-```
+| 日志级别 | 说明 |
+|---------|------|
+| DEBUG | 调试信息 |
+| INFO | 普通信息 |
+| WARN | 警告信息 |
+| ERROR | 错误信息 |
 
 #### 7.2.2 监控设计
 
-| 监控项 | 监控工具 | 告警阈值 |
-|-------|---------|---------|
-| CPU 使用率 | Prometheus | ≥80% |
-| 内存使用率 | Prometheus | ≥85% |
-| 接口响应时间 | Prometheus | ≥3s |
-| 错误率 | Prometheus | ≥5% |
-| AI 调用成功率 | 自定义监控 | ≤95% |
-
-#### 7.2.3 配置管理
-
-| 配置类型 | 管理方式 |
-|---------|---------|
-| 应用配置 | 环境变量 + 配置文件 |
-| 数据库配置 | 配置文件 |
-| AI 密钥 | 环境变量（加密） |
-| 动态配置 | 数据库配置表 |
+| 监控项 | 告警阈值 |
+|-------|---------|
+| CPU 使用率 | ≥80% |
+| 内存使用率 | ≥85% |
+| 接口响应时间 | ≥3s |
+| 错误率 | ≥5% |
 
 ### 7.3 安全性设计
 
@@ -949,15 +853,6 @@ logger.info({
 | 敏感数据脱敏 | 手机号/邮箱中间位隐藏 |
 | SQL 注入防护 | 参数化查询 |
 | XSS 防护 | 输入过滤、输出转义 |
-| CSRF 防护 | Token 校验 |
-
-#### 7.3.3 接口安全
-
-| 安全措施 | 实现方式 |
-|---------|---------|
-| 频率限制 | IP+Token 双重限制，1 分钟≤20 次 |
-| 防刷机制 | 验证码、黑名单 |
-| 文件上传安全 | 文件类型校验、病毒扫描 |
 
 ### 7.4 可扩展性设计
 
@@ -969,14 +864,6 @@ logger.info({
 | 新增学科 | 配置学科枚举、提示词模板 |
 | 新增功能模块 | 模块化设计，独立开发部署 |
 
-#### 7.4.2 性能扩展
-
-| 扩展方向 | 扩展方式 |
-|---------|---------|
-| 水平扩展 | 增加应用服务器实例 |
-| 数据库扩展 | 读写分离、分库分表 |
-| 缓存扩展 | Redis 集群 |
-
 ### 7.5 兼容性设计
 
 #### 7.5.1 浏览器兼容
@@ -986,17 +873,8 @@ logger.info({
 | Chrome | 90+ |
 | Firefox | 88+ |
 | Edge | 90+ |
-| Safari | 14+ |
 
-#### 7.5.2 设备兼容
-
-| 设备类型 | 屏幕尺寸 | 适配方式 |
-|---------|---------|---------|
-| PC | ≥1200px | 响应式布局 |
-| 平板 | 768-1199px | 响应式布局 |
-| 手机 | <768px | 暂不支持 |
-
-#### 7.5.3 文件格式兼容
+#### 7.5.2 文件格式兼容
 
 | 文件类型 | 支持格式 |
 |---------|---------|
@@ -1005,78 +883,35 @@ logger.info({
 | 图片 | .jpg, .jpeg, .png |
 | 文本 | .txt |
 
-### 7.6 测试与集成
-
-#### 7.6.1 测试策略
-
-| 测试类型 | 测试工具 | 覆盖率要求 |
-|---------|---------|-----------|
-| 单元测试 | Jest（前端）、Pytest（后端） | 核心模块≥70% |
-| 集成测试 | Postman、Pytest | 核心接口 100% |
-| E2E 测试 | Cypress | 核心流程 100% |
-| 性能测试 | JMeter、Lighthouse | 关键指标达标 |
-
-#### 7.6.2 集成流程
-
-```
-代码提交 → 自动化测试 → 代码审查 → 
-构建打包 → 测试环境部署 → 集成测试 → 
-生产环境部署 → 验收测试
-```
-
-#### 7.6.3 CI/CD 设计
-
-| 阶段 | 工具 | 说明 |
-|------|------|------|
-| 代码构建 | GitHub Actions | 自动构建、测试 |
-| 镜像构建 | Docker | 构建 Docker 镜像 |
-| 部署 | GitHub Actions | 自动部署到服务器 |
-| 回滚 | 手动触发 | 快速回滚到上一版本 |
-
 ---
 
 ## 附录
 
-### 附录 A：数据库表设计
+### 附录 A：CSCI-CSC 对照表
 
-#### A.1 用户表（users）
+| CSCI | CSC 编号 | CSC 名称 |
+|------|---------|---------|
+| CSCI-01 | CSC-01-01 | 学生端前端 |
+|  | CSC-01-02 | 教师端前端 |
+|  | CSC-01-03 | 管理员端前端 |
+|  | CSC-01-04 | 公共组件库 |
+| CSCI-02 | CSC-02-01 | 认证模块 |
+|  | CSC-02-02 | 学生业务模块 |
+|  | CSC-02-03 | 教师业务模块 |
+|  | CSC-02-04 | 管理员业务模块 |
+|  | CSC-02-05 | 文件模块 |
+|  | CSC-02-06 | 通知模块 |
+|  | CSC-02-07 | 日志模块 |
+| CSCI-03 | CSC-03-01 | AI 接口封装 |
+|  | CSC-03-02 | 服务商管理 |
+|  | CSC-03-03 | 降级策略 |
+|  | CSC-03-04 | 提示词管理 |
+| CSCI-04 | - | 数据库（无 CSC 划分） |
 
-| 字段名 | 类型 | 说明 | 约束 |
-|-------|------|------|------|
-| id | BIGINT | 用户 ID | 主键 |
-| account | VARCHAR(50) | 账号（手机号/邮箱） | 唯一索引 |
-| password | VARCHAR(255) | 密码（BCrypt 加密） | 非空 |
-| name | VARCHAR(50) | 姓名 | 非空 |
-| role | VARCHAR(20) | 角色 | 非空 |
-| status | VARCHAR(20) | 状态 | 非空 |
-| school | VARCHAR(100) | 学校 | 可选 |
-| avatar | VARCHAR(255) | 头像 URL | 可选 |
-| created_at | DATETIME | 创建时间 | 非空 |
-| updated_at | DATETIME | 更新时间 | 非空 |
-
-#### A.2 作业表（homeworks）
-
-| 字段名 | 类型 | 说明 | 约束 |
-|-------|------|------|------|
-| id | BIGINT | 作业 ID | 主键 |
-| teacher_id | BIGINT | 教师 ID | 外键 |
-| title | VARCHAR(200) | 作业标题 | 非空 |
-| content | TEXT | 作业内容 | 非空 |
-| deadline | DATETIME | 截止时间 | 非空 |
-| created_at | DATETIME | 创建时间 | 非空 |
-
-#### A.3 AI 调用日志表（ai_logs）
-
-| 字段名 | 类型 | 说明 | 约束 |
-|-------|------|------|------|
-| id | BIGINT | 日志 ID | 主键 |
-| user_id | BIGINT | 用户 ID | 外键 |
-| provider | VARCHAR(50) | AI 服务商 | 非空 |
-| prompt | TEXT | 请求内容 | 非空 |
-| response | TEXT | 响应内容 | 非空 |
-| tokens | INT | 消耗 tokens | 非空 |
-| cost | DECIMAL(10,4) | 费用 | 非空 |
-| created_at | DATETIME | 创建时间 | 非空 |
+**CSCI 与 CSC 关系说明**：
+- 每个 CSCI 是一个独立的软件配置项，可以独立开发、测试、部署
+- CSC 是 CSCI 的组成部分，负责实现特定功能模块
+- 前端 CSCI-01 按用户角色划分 CSC，后端 CSCI-02 按业务功能划分 CSC
 
 ### 附录 B：错误码表
 
@@ -1090,19 +925,9 @@ logger.info({
 | 3001 | AI 服务调用失败 | 稍后重试 |
 | 5001 | 系统内部错误 | 联系管理员 |
 
-### 附录 C：部署清单
-
-| 部署项 | 说明 | 状态 |
-|-------|------|------|
-| 服务器环境 | Ubuntu 22.04 + Docker | □ |
-| MySQL 部署 | 主从复制配置 | □ |
-| Redis 部署 | 哨兵模式配置 | □ |
-| 应用部署 | Docker 容器化部署 | □ |
-| Nginx 配置 | 反向代理 + SSL | □ |
-| 域名配置 | DNS 解析 + SSL 证书 | □ |
-| 监控配置 | Prometheus + Grafana | □ |
-| 备份配置 | 自动备份脚本 | □ |
-
 ---
 
-**文档结束**
+**文档版本**：v2.0
+**编写日期**：2026-04-15
+**编写人**：陈城
+**审核人**：全体成员
